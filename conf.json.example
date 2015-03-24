@@ -1,0 +1,11 @@
+{
+    "url": "http://user:password@hostname/path/to/caldav/", 
+    "filter": {
+        "calendars": [],
+        "interval": [-7, 365]
+    },
+    "display": {
+        "timezone": "UTC",
+        "event_format": "{start:%d %b %Y}\t{summary}"
+    }
+}

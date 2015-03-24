@@ -1,0 +1,8 @@
+*.swp
+*~
+*.pyc
+/venv/
+/.ropeproject/
+/README.html
+/conf.json
+/errors.log
