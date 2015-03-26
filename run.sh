@@ -17,12 +17,12 @@ install() {
     fi
     virtualenv --python=python2.7 venv
     . venv/bin/activate
-    exec pip install -r requirements.txt
+    pip install -r requirements.txt
 }
 
 run() {
     . venv/bin/activate
-    exec python upcoming.py $@
+    python upcoming.py $@
 }
 
 main $@
