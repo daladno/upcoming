@@ -3,9 +3,10 @@ import json
 from datetime import datetime, timedelta
 import logging
 import sys
+import StringIO
 
 import caldav
-import icalendar
+import vobject
 import pytz
 
 CONFIG_FILE = "conf.json"
@@ -103,7 +104,7 @@ def validate_config(conf):
 def download_upcoming_events(conf):
     calendars = connect(conf['url'])
     calendars_to_display = conf['filter']['calendars']
-    interval = get_relative_interval(conf)
+    interval = get_absolute_interval(conf)
     events = []
     if len(calendars) > 0:
         for calendar in calendars:
@@ -126,13 +127,18 @@ def connect(url):
         raise IOError('Network error: {}'.format(desc))
 
 
-def get_relative_interval(conf):
+def get_absolute_interval(conf):
     interval_rel = conf['filter']['interval']
     timezone = conf['display']['timezone']
     today = set_localtime_midnight(datetime.utcnow(), timezone)
-    interval_abs = (
+    interval_abs_sharp = (
         today + timedelta(days=interval_rel[0]),
         today + timedelta(days=interval_rel[1]),
+    )
+    one_second = timedelta(seconds=1)
+    interval_abs = (
+        min(interval_abs_sharp) + one_second,
+        max(interval_abs_sharp) - one_second,
     )
     return interval_abs
 
@@ -141,7 +147,8 @@ def set_localtime_midnight(utc_time, local_tz):
     utc = pytz.utc
     utc_aware = utc.localize(utc_time)
     local_time = local_tz.normalize(utc_aware.astimezone(local_tz))
-    local_midnight = local_time.replace(hour=0, minute=0, second=0)
+    local_midnight = local_time.replace(hour=0, minute=0,
+                                        second=0, microsecond=0)
     local_midnight_in_utc = utc.normalize(local_midnight.astimezone(utc))
     return local_midnight_in_utc
 
@@ -158,8 +165,10 @@ def is_in_display_list(calendar, display_list):
 
 
 def parse_event(caldav_event):
-    cal = icalendar.Calendar.from_ical(caldav_event.get_data())
-    return cal.subcomponents[0]
+    event_data = caldav_event.get_data()
+    fd = StringIO.StringIO(event_data)
+    cal = vobject.readOne(fd)
+    return cal.vevent
 
 
 def display_events(events, conf):
@@ -182,7 +191,6 @@ def to_template_contexts(events, timezone):
     contexts = [
         to_template_context(ev, timezone)
         for ev in events
-        if is_well_formed_event(ev)
     ]
     contexts.sort(key=lambda c: c['start'])
     return contexts
@@ -190,24 +198,21 @@ def to_template_contexts(events, timezone):
 
 def to_template_context(event, timezone):
     return {
-        'start': localize(event['dtstart'], timezone),
-        'end': localize(event['dtend'], timezone),
-        'summary': event['summary']
+        'start': localize(event.dtstart.value, timezone),
+        'end': localize(event.dtend.value, timezone),
+        'summary': event.summary.value
     }
 
 
-def localize(date_field, timezone):
-    return timezone.localize(
-        datetime.combine(date_field.dt, datetime.min.time())
-    )
-
-
-def is_well_formed_event(event):
-    return (
-        'dtstart' in event and
-        'dtend' in event and
-        'summary' in event
-    )
+def localize(date_or_time, local_tz):
+    if isinstance(date_or_time, datetime):
+        time = date_or_time
+    else:
+        naive_time = datetime.combine(date_or_time, datetime.min.time())
+        utc = pytz.utc
+        time = utc.localize(naive_time)
+    local_time = local_tz.normalize(time.astimezone(local_tz))
+    return local_time
 
 
 def uprint(str):
