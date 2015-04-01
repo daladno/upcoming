@@ -20,6 +20,7 @@ CONFIG_DEFAULTS = {
         "event_format": "{start:%d %b %Y}\t{summary}"
     },
 }
+JET_LAG = timedelta(days=2)
 
 
 _logger = logging.getLogger(__name__)
@@ -105,16 +106,24 @@ def download_upcoming_events(conf):
     calendars = connect(conf['url'])
     calendars_to_display = conf['filter']['calendars']
     interval = get_absolute_interval(conf)
+    jet_lag_aware_interval = (
+        min(interval) - JET_LAG,
+        max(interval) + JET_LAG
+    )
     events = []
     if len(calendars) > 0:
         for calendar in calendars:
             if is_in_display_list(calendar, calendars_to_display):
-                results = calendar.date_search(interval[0], interval[1])
+                results = calendar.date_search(
+                    jet_lag_aware_interval[0],
+                    jet_lag_aware_interval[1]
+                )
                 for event in results:
                     events.append(event)
     parsed_events = [parse_event(event, conf['display']['timezone'])
                      for event in events]
     parsed_events.sort(key=lambda c: c['start'])
+    parsed_events = filter_out_jet_lagged_events(parsed_events, interval)
     return parsed_events
 
 
@@ -182,12 +191,23 @@ def parse_event(caldav_event, timezone):
 def localize(date_or_time, local_tz):
     if isinstance(date_or_time, datetime):
         time = date_or_time
+        local_time = local_tz.normalize(time.astimezone(local_tz))
     else:
-        naive_time = datetime.combine(date_or_time, datetime.min.time())
-        utc = pytz.utc
-        time = utc.localize(naive_time)
-    local_time = local_tz.normalize(time.astimezone(local_tz))
+        naive_date = date_or_time
+        local_time = local_tz.localize(datetime(
+            year=naive_date.year,
+            month=naive_date.month,
+            day=naive_date.day,
+            hour=0, minute=0, second=0))
     return local_time
+
+
+def filter_out_jet_lagged_events(events, interval):
+    time_from, time_to = interval
+    return [
+        event for event in events
+        if event['end'] >= time_from and event['start'] <= time_to
+    ]
 
 
 def display_events(events, conf):
