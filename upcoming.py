@@ -112,7 +112,10 @@ def download_upcoming_events(conf):
                 results = calendar.date_search(interval[0], interval[1])
                 for event in results:
                     events.append(event)
-    return [parse_event(event) for event in events]
+    parsed_events = [parse_event(event, conf['display']['timezone'])
+                     for event in events]
+    parsed_events.sort(key=lambda c: c['start'])
+    return parsed_events
 
 
 def connect(url):
@@ -164,39 +167,11 @@ def is_in_display_list(calendar, display_list):
         return True
 
 
-def parse_event(caldav_event):
+def parse_event(caldav_event, timezone):
     event_data = caldav_event.get_data()
     fd = StringIO.StringIO(event_data)
     cal = vobject.readOne(fd)
-    return cal.vevent
-
-
-def display_events(events, conf):
-    ev_format = conf['display']['event_format']
-    timezone = conf['display']['timezone']
-    contexts = to_template_contexts(events, timezone)
-    if len(contexts):
-        try:
-            for ctx in contexts:
-                uprint(ev_format.format(**ctx))
-        except KeyError as err:
-            raise ValueError('Wrong event_format line in conf file, at {}'
-                             .format(err))
-
-    else:
-        uprint("No events")
-
-
-def to_template_contexts(events, timezone):
-    contexts = [
-        to_template_context(ev, timezone)
-        for ev in events
-    ]
-    contexts.sort(key=lambda c: c['start'])
-    return contexts
-
-
-def to_template_context(event, timezone):
+    event = cal.vevent
     return {
         'start': localize(event.dtstart.value, timezone),
         'end': localize(event.dtend.value, timezone),
@@ -213,6 +188,20 @@ def localize(date_or_time, local_tz):
         time = utc.localize(naive_time)
     local_time = local_tz.normalize(time.astimezone(local_tz))
     return local_time
+
+
+def display_events(events, conf):
+    ev_format = conf['display']['event_format']
+    if len(events):
+        try:
+            for event in events:
+                uprint(ev_format.format(**event))
+        except KeyError as err:
+            raise ValueError('Wrong event_format line in conf file, at {}'
+                             .format(err))
+
+    else:
+        uprint("No events")
 
 
 def uprint(str):
