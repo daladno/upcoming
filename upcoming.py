@@ -1,4 +1,3 @@
-from __future__ import unicode_literals
 
 import json
 from datetime import datetime, timedelta
@@ -56,18 +55,55 @@ def read_config(conf_filename):
     try:
         with open(conf_filename) as fd:
             conf = json.load(fd)
-            if 'url' not in conf:
-                raise ValueError('No url is set')
-            return conf
+            return validate_config(conf)
     except IOError as err:
         raise IOError('Config file reading error: {}'.format(err))
     except ValueError as err:
         raise ValueError('Config json parsing error: {}'.format(err))
 
 
+def validate_config(conf):
+    if 'url' not in conf:
+        raise ValueError('No url is set')
+    filter = conf.get('filter', CONFIG_DEFAULTS['filter'])
+    calendars_to_display = filter.get('calendars',
+                                      CONFIG_DEFAULTS['filter']['calendars'])
+    if calendars_to_display is not None:
+        calendars_to_display = [unicode(c) for c in calendars_to_display]
+    interval_rel = filter.get('interval',
+                              CONFIG_DEFAULTS['filter']['interval'])
+    try:
+        interval_rel[0]+1, interval_rel[1]+1  # make sure they're ints
+    except IndexError:
+        raise ValueError('Wrong time interval in config file')
+    except TypeError:
+        raise ValueError('Strange time interval values in config file')
+    sec_display = conf.get('display', CONFIG_DEFAULTS['display'])
+    ev_format = sec_display.get('event_format',
+                                CONFIG_DEFAULTS['display']['event_format'])
+    tz_name = sec_display.get('timezone',
+                              CONFIG_DEFAULTS['display']['timezone'])
+    try:
+        timezone = pytz.timezone(tz_name)
+    except:
+        raise ValueError('Unknown timezone in conf file: "{}"'.format(tz_name))
+    return {
+        'url': conf['url'],
+        'filter': {
+            'calendars': calendars_to_display,
+            'interval': interval_rel,
+        },
+        'display': {
+            'timezone': timezone,
+            'event_format': ev_format,
+        }
+    }
+
+
 def download_upcoming_events(conf):
-    calendars_to_display, interval = configure_filters(conf)
     calendars = connect(conf['url'])
+    calendars_to_display = conf['filter']['calendars']
+    interval = get_relative_interval(conf)
     events = []
     if len(calendars) > 0:
         for calendar in calendars:
@@ -90,26 +126,14 @@ def connect(url):
         raise IOError('Network error: {}'.format(desc))
 
 
-def configure_filters(conf):
-    filter = conf.get('filter', CONFIG_DEFAULTS['filter'])
-    calendars_to_display = filter.get('calendars',
-                                      CONFIG_DEFAULTS['filter']['calendars'])
-    if calendars_to_display is not None:
-        calendars_to_display = [unicode(c) for c in calendars_to_display]
-    interval_rel = filter.get('interval',
-                              CONFIG_DEFAULTS['filter']['interval'])
+def get_relative_interval(conf):
+    interval_rel = conf['filter']['interval']
     now = datetime.utcnow()
-    try:
-        interval_rel[0]+1, interval_rel[1]+1  # make sure they're ints
-        interval_abs = (
-            now + timedelta(days=interval_rel[0]),
-            now + timedelta(days=interval_rel[1]),
-        )
-    except IndexError:
-        raise ValueError('Wrong time interval in config file')
-    except TypeError:
-        raise ValueError('Strange time interval values in config file')
-    return calendars_to_display, interval_abs
+    interval_abs = (
+        now + timedelta(days=interval_rel[0]),
+        now + timedelta(days=interval_rel[1]),
+    )
+    return interval_abs
 
 
 def is_in_display_list(calendar, display_list):
@@ -129,7 +153,8 @@ def parse_event(caldav_event):
 
 
 def display_events(events, conf):
-    ev_format, timezone = configure_display(conf)
+    ev_format = conf['display']['event_format']
+    timezone = conf['display']['timezone']
     contexts = to_template_contexts(events, timezone)
     if len(contexts):
         try:
@@ -141,19 +166,6 @@ def display_events(events, conf):
 
     else:
         uprint("No events")
-
-
-def configure_display(conf):
-    sec_display = conf.get('display', CONFIG_DEFAULTS['display'])
-    ev_format = sec_display.get('event_format',
-                                CONFIG_DEFAULTS['display']['event_format'])
-    tz_name = sec_display.get('timezone',
-                              CONFIG_DEFAULTS['display']['timezone'])
-    try:
-        timezone = pytz.timezone(tz_name)
-    except:
-        raise ValueError('Unknown timezone in conf file: "{}"'.format(tz_name))
-    return ev_format, timezone
 
 
 def to_template_contexts(events, timezone):
