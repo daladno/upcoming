@@ -128,12 +128,22 @@ def connect(url):
 
 def get_relative_interval(conf):
     interval_rel = conf['filter']['interval']
-    now = datetime.utcnow()
+    timezone = conf['display']['timezone']
+    today = set_localtime_midnight(datetime.utcnow(), timezone)
     interval_abs = (
-        now + timedelta(days=interval_rel[0]),
-        now + timedelta(days=interval_rel[1]),
+        today + timedelta(days=interval_rel[0]),
+        today + timedelta(days=interval_rel[1]),
     )
     return interval_abs
+
+
+def set_localtime_midnight(utc_time, local_tz):
+    utc = pytz.utc
+    utc_aware = utc.localize(utc_time)
+    local_time = local_tz.normalize(utc_aware.astimezone(local_tz))
+    local_midnight = local_time.replace(hour=0, minute=0, second=0)
+    local_midnight_in_utc = utc.normalize(local_midnight.astimezone(utc))
+    return local_midnight_in_utc
 
 
 def is_in_display_list(calendar, display_list):
