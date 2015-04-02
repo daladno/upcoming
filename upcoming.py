@@ -10,6 +10,8 @@ import vobject
 import pytz
 
 CONFIG_FILE = "conf.json"
+if '-c' in sys.argv:
+    CONFIG_FILE = sys.argv[2]
 CONFIG_DEFAULTS = {
     "filter": {
         "calendars": [],
